@@ -66,7 +66,8 @@ async def validation_handler(request: Request, exc: RequestValidationError):
 async def http_handler(request: Request, exc: StarletteHTTPException):
     codes = {404: "NOT_FOUND", 405: "METHOD_NOT_ALLOWED"}
     hints = {404: "See /formats for the list of available endpoints.", 405: "Conversion endpoints only accept POST."}
-    error = {"code": codes.get(exc.status_code, "HTTP_ERROR"), "message": str(exc.detail)}
+    message = f"{exc.detail}: {request.method} {request.url.path}" if exc.status_code == 404 else str(exc.detail)
+    error = {"code": codes.get(exc.status_code, "HTTP_ERROR"), "message": message}
     if exc.status_code in hints:
         error["hint"] = hints[exc.status_code]
     return JSONResponse({"error": error}, status_code=exc.status_code, headers=getattr(exc, "headers", None))
