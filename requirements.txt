@@ -1,0 +1,9 @@
+fastapi>=0.110
+xmltodict>=0.13
+PyYAML>=6.0
+msgpack>=1.0
+cbor2>=5.6
+pymongo>=4.6        # provides the `bson` package
+protobuf>=4.25
+fastavro>=1.9
+flatbuffers>=24.3.25
