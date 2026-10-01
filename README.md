@@ -46,6 +46,47 @@ curl -X POST localhost:8000/convert/cbor-to-json -H "Content-Type: application/o
 Optional query parameters (shown in Swagger only where relevant): `pretty` (JSON/XML/YAML output), `xml_root` (XML output),
 `infer_types` (CSV input → numbers/booleans), `response_format` (binary output).
 
+## MCP server (for AI agents)
+
+The same converter is available to any MCP-capable agent (Claude Desktop/Code, Cursor, ...) over **stdio** or **streamable HTTP**.
+
+| Tool | What it does |
+|---|---|
+| `convert_data(source_format, target_format, data, pretty, xml_root, infer_types)` | Convert a document between any two formats |
+| `validate_data(format, data)` | Check that a document is well-formed (returns `valid: false` + the error instead of failing) |
+| `list_formats()` | Formats, how data is passed for each, and per-format caveats |
+
+Text formats are passed as plain strings; binary formats (FlatBuffers, Protobuf, Avro, MessagePack, CBOR, BSON) as **base64 strings**, in and out.
+Format names are forgiving: `msgpack`, `YML`, `Protocol Buffers` work, and typos get a "did you mean" hint.
+
+**Remote (the deployed app, or `http://localhost:8000/mcp` locally):**
+
+```bash
+claude mcp add --transport http format-converter https://format-converter-api-coral.vercel.app/mcp
+```
+
+**Local stdio** (Claude Desktop `claude_desktop_config.json`, Cursor, ...; adjust the paths):
+
+```json
+{
+  "mcpServers": {
+    "format-converter": {
+      "command": "C:\\path\\to\\FormatConvertor\\.venv\\Scripts\\python.exe",
+      "args": ["-m", "converter.mcp_server"],
+      "cwd": "C:\\path\\to\\FormatConvertor"
+    }
+  }
+}
+```
+
+Try it interactively: `npx @modelcontextprotocol/inspector .venv\Scripts\python -m converter.mcp_server`.
+
+**Errors** are returned as tool results with `isError: true`. The text is the same JSON envelope as the REST API
+(`code`, `message`, `hint`, `source_format`, `target_format`, `stage`) so the agent can read the hint and retry. Codes:
+`INVALID_FORMAT`, `INVALID_INPUT`, `CONVERSION_FAILED`, `PAYLOAD_TOO_LARGE`, `OUTPUT_TOO_LARGE` (results over 1 MB;
+`MCP_MAX_OUTPUT_BYTES`), `INTERNAL_ERROR` (details are logged to stderr, never returned). `validate_data` reports malformed input as
+`valid: false` rather than an error. The HTTP endpoint is stateless and, like the REST API, unauthenticated.
+
 ## Errors
 
 Every failure uses one envelope:
@@ -83,6 +124,8 @@ Every conversion goes *source → plain JSON-like data → target*, so these for
 api/index.py          Vercel entrypoint
 converter/codecs.py   every format's decoder/encoder + registry
 converter/routes.py   the 90 generated, explicitly named endpoints
+converter/service.py  HTTP-free conversion pipeline shared by REST and MCP
+converter/mcp_server.py  MCP tools, error handling, stdio entrypoint, /mcp ASGI app
 converter/main.py     app, Swagger metadata, error handlers
 converter/errors.py   exception types + error response model
 tests/                pytest suite (all 90 endpoints, round trips, error cases)

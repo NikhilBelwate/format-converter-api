@@ -134,7 +134,7 @@ def dec_yaml(raw: bytes) -> Any:
 
 def enc_yaml(data: Any, pretty: bool = True) -> bytes:
     return yaml.safe_dump(
-        data, sort_keys=False, allow_unicode=True, default_flow_style=None if pretty else True
+        data, sort_keys=False, allow_unicode=True, default_flow_style=not pretty
     ).encode("utf-8")
 
 
@@ -282,7 +282,7 @@ def dec_bson(raw: bytes) -> Any:
 def enc_bson(data: Any) -> bytes:
     def check(n: int) -> None:
         if not INT64_MIN <= n <= INT64_MAX:
-            raise ConversionError(f"Integer {n} does not fit BSON's 64-bit integer range.")
+            raise ConversionError(f"Integer {n} does not fit BSON's 64-bit integer range.", hint="Send very large integers as strings.")
 
     _walk_ints(data, check)
     try:
@@ -350,7 +350,7 @@ class _AvroInferrer:
             return "boolean"
         if isinstance(v, int):
             if not INT64_MIN <= v <= INT64_MAX:
-                raise ConversionError(f"Integer {v} does not fit Avro's 64-bit 'long' type.")
+                raise ConversionError(f"Integer {v} does not fit Avro's 64-bit 'long' type.", hint="Send very large integers as strings.")
             return "long"
         if isinstance(v, float):
             return "double"
@@ -446,7 +446,7 @@ def dec_flatbuffers(raw: bytes) -> Any:
 def enc_flatbuffers(data: Any) -> bytes:
     def check(n: int) -> None:
         if not INT64_MIN <= n <= INT64_MAX:
-            raise ConversionError(f"Integer {n} does not fit FlexBuffers' 64-bit integer range.")
+            raise ConversionError(f"Integer {n} does not fit FlexBuffers' 64-bit integer range.", hint="Send very large integers as strings.")
 
     _walk_ints(data, check)
     try:
@@ -467,6 +467,15 @@ class Format:
     encode: Callable[..., bytes]
     sample: Optional[str] = None   # example input (text formats only; binary samples are generated)
 
+
+FORMAT_NOTES: Dict[str, str] = {
+    "flatbuffers": "FlatBuffers normally needs a compiled schema; this API uses FlexBuffers, its schema-less variant.",
+    "protobuf": "Protobuf is read/written as a schema-less `google.protobuf.Value` message. Numbers are doubles.",
+    "avro": "Avro schema is inferred from the data and embedded in the output; decoding always returns a list of records.",
+    "bson": "BSON's top level must be a document; non-object data is wrapped as `{\"data\": ...}`.",
+    "csv": "CSV needs a list of objects; nested objects become `parent.child` columns.",
+    "xml": "XML attributes appear as `@attr` keys and text as `#text`; all XML values are strings.",
+}
 
 FORMATS: Dict[str, Format] = {f.key: f for f in [
     Format("json", "JSON", False, "application/json", "json", dec_json, enc_json,

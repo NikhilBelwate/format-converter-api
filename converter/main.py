@@ -7,6 +7,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .codecs import FORMATS
 from .errors import APIError
+from .mcp_server import asgi_app as mcp_asgi_app
 from .routes import MAX_BODY_BYTES, router
 
 log = logging.getLogger("converter")
@@ -38,6 +39,7 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 app.include_router(router)
+app.add_route("/mcp", mcp_asgi_app, include_in_schema=False)  # MCP server (streamable HTTP) for AI agents
 
 
 # --------------------------------------------------------------------------- error handling

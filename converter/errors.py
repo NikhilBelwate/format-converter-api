@@ -38,10 +38,21 @@ class InvalidInputError(APIError):
     code = "INVALID_INPUT"
 
 
+class InvalidFormatError(InvalidInputError):
+    """A format name that isn't supported (HTTP 400 / MCP tool error)."""
+    code = "INVALID_FORMAT"
+
+
 class ConversionError(APIError):
     """The input was valid, but cannot be represented in the target format (HTTP 422)."""
     status_code = 422
     code = "CONVERSION_FAILED"
+
+
+class OutputTooLargeError(APIError):
+    """The converted result is too big to return to an agent (MCP only)."""
+    status_code = 413
+    code = "OUTPUT_TOO_LARGE"
 
 
 class PayloadTooLargeError(APIError):

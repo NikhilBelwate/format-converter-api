@@ -1,6 +1,5 @@
 """One endpoint per (source, target) pair: POST /convert/{source}-to-{target}."""
 import base64
-import binascii
 import inspect
 import os
 from typing import Any, Dict
@@ -8,11 +7,10 @@ from typing import Any, Dict
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import Response
 
-from .codecs import FORMATS, Format
-from .errors import (
-    APIError, ConversionError, ErrorResponse, InvalidInputError, PayloadTooLargeError,
-)
+from .codecs import FORMAT_NOTES, FORMATS, Format
+from .errors import ErrorResponse, InvalidInputError, PayloadTooLargeError
 from .normalize import to_plain
+from .service import decode_base64, decode_payload, encode_payload
 
 MAX_BODY_BYTES = int(os.environ.get("MAX_BODY_BYTES", 4 * 1024 * 1024))  # Vercel's hard limit is 4.5 MB
 
@@ -33,38 +31,8 @@ async def read_body(request: Request, src: Format) -> bytes:
             hint=f"Send the {src.name} document as the raw request body.",
         )
     if src.binary and not request.headers.get("content-type", "").startswith("application/octet-stream"):
-        try:
-            return base64.b64decode("".join(body.decode("ascii").split()), validate=True)
-        except (binascii.Error, UnicodeDecodeError, ValueError) as exc:
-            raise InvalidInputError(
-                f"{src.name} is a binary format, so the body must be base64 text (or sent as application/octet-stream): {exc}.",
-                hint="Base64-encode the bytes, or set the Content-Type header to application/octet-stream and send them raw.",
-            )
+        return decode_base64(body, src)
     return body
-
-
-def decode(src: Format, raw: bytes, options: Dict[str, Any]) -> Any:
-    accepted = inspect.signature(src.decode).parameters
-    try:
-        return to_plain(src.decode(raw, **{k: v for k, v in options.items() if k in accepted}))
-    except APIError:
-        raise
-    except RecursionError:
-        raise InvalidInputError("Data is nested too deeply to process.")
-    except Exception as exc:  # decoder library surprised us
-        raise InvalidInputError(f"Could not read input as {src.name}: {exc or type(exc).__name__}.")
-
-
-def encode(tgt: Format, data: Any, options: Dict[str, Any]) -> bytes:
-    accepted = inspect.signature(tgt.encode).parameters
-    try:
-        return tgt.encode(data, **{k: v for k, v in options.items() if k in accepted})
-    except APIError:
-        raise
-    except RecursionError:
-        raise ConversionError("Data is nested too deeply to process.")
-    except Exception as exc:
-        raise ConversionError(f"Data cannot be written as {tgt.name}: {exc or type(exc).__name__}.")
 
 
 def build_response(tgt: Format, payload: bytes, options: Dict[str, Any]) -> Response:
@@ -104,17 +72,9 @@ def _describe(src: Format, tgt: Format) -> str:
         lines.append(f"\n**Output:** {tgt.name} bytes as base64 text (use `response_format=raw` for a binary download).")
     else:
         lines.append(f"\n**Output:** {tgt.name} text (`{tgt.media_type}`).")
-    notes = {
-        "flatbuffers": "FlatBuffers normally needs a compiled schema; this API uses FlexBuffers, its schema-less variant.",
-        "protobuf": "Protobuf is read/written as a schema-less `google.protobuf.Value` message. Numbers are doubles.",
-        "avro": "Avro schema is inferred from the data and embedded in the output; decoding always returns a list of records.",
-        "bson": "BSON's top level must be a document; non-object data is wrapped as `{\"data\": ...}`.",
-        "csv": "CSV needs a list of objects; nested objects become `parent.child` columns.",
-        "xml": "XML attributes appear as `@attr` keys and text as `#text`; all XML values are strings.",
-    }
     for fmt in (src, tgt):
-        if fmt.key in notes:
-            lines.append(f"\n*{fmt.name}:* {notes[fmt.key]}")
+        if fmt.key in FORMAT_NOTES:
+            lines.append(f"\n*{fmt.name}:* {FORMAT_NOTES[fmt.key]}")
     return "\n".join(lines)
 
 
@@ -123,12 +83,7 @@ def _make_endpoint(src: Format, tgt: Format):
 
     async def endpoint(request: Request, **params: Any) -> Response:
         raw = await read_body(request, src)
-        data = decode(src, raw, params)
-        try:
-            payload = encode(tgt, data, params)
-        except APIError as exc:
-            exc.extra.setdefault("stage", "serialize")
-            raise
+        payload = encode_payload(tgt, decode_payload(src, raw, params), params)
         return build_response(tgt, payload, params)
 
     # Give FastAPI a real signature so each endpoint shows only its relevant query parameters in Swagger.

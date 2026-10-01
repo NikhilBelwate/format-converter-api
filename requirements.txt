@@ -7,3 +7,4 @@ pymongo>=4.6        # provides the `bson` package
 protobuf>=4.25
 fastavro>=1.9
 flatbuffers>=24.3.25
+mcp>=2.0,<3         # MCP server (converter/mcp_server.py); needs Python >= 3.10
