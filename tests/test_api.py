@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 
 from converter.codecs import FORMATS
 from converter.main import app
+from converter.protobuf import EXAMPLE_SCHEMA
 from converter.routes import _example_body
 
 client = TestClient(app, raise_server_exceptions=False)
@@ -26,20 +27,31 @@ def to_json(src, body):
 
 
 # --------------------------------------------------------------------------- coverage
-def test_ninety_endpoints_exist():
+def test_an_endpoint_for_every_pair_exists():
     paths = [p for p in app.openapi()["paths"] if p.startswith("/convert/")]
-    assert len(paths) == 90 == len(PAIRS)
+    assert len(paths) == 110 == len(PAIRS)
 
 
 @pytest.mark.parametrize("src,tgt", PAIRS)
 def test_every_pair_converts_swagger_example(src, tgt):
-    r = convert(src, tgt, _example_body(FORMATS[src]))
+    params = {"proto_schema": EXAMPLE_SCHEMA} if {"protobuf", "prototext"} & {src, tgt} else {}
+    r = convert(src, tgt, _example_body(FORMATS[src]), params=params)
+    if tgt in ("protobuf", "prototext") and src in ("xml", "csv", "avro"):  # a wrapper or a list, not a Person
+        assert r.status_code == 422 and err(r)["code"] == "CONVERSION_FAILED"
+        return
     assert r.status_code == 200, f"{src}->{tgt}: {r.text}"
     assert r.content
 
 
+@pytest.mark.parametrize("src", [s for s in FORMATS if s not in ("protobuf", "prototext")])
+def test_named_fields_to_protobuf_need_a_schema(src):
+    r = convert(src, "protobuf", _example_body(FORMATS[src]))
+    assert r.status_code == 422, r.text
+    assert "proto_schema" in err(r)["hint"]
+
+
 # --------------------------------------------------------------------------- round trips
-@pytest.mark.parametrize("fmt", ["yaml", "flatbuffers", "protobuf", "messagepack", "cbor", "bson"])
+@pytest.mark.parametrize("fmt", ["yaml", "flatbuffers", "messagepack", "cbor", "bson"])
 def test_json_roundtrip_lossless(fmt):
     encoded = convert("json", fmt, json.dumps(DATA)).text
     assert to_json(fmt, encoded) == DATA
@@ -129,7 +141,7 @@ def test_empty_body_and_bad_base64_and_bad_utf8():
     ("xml", '{"bad key": 1}', "valid XML"),
     ("avro", '{"bad-key": 1}', "Avro field name"),
     ("bson", '{"n": 18446744073709551616}', "64-bit"),
-    ("protobuf", '{"n": 9007199254740993}', "exactly"),
+    ("protobuf", '{"name": "Ann"}', "field number"),
     ("csv", "[]", "empty"),
     ("csv", "[[1, 2]]", "list of objects"),
     ("json", "NaN", "NaN"),
@@ -163,6 +175,8 @@ def test_deeply_nested_input_does_not_crash():
 def test_swagger_and_utility_routes():
     assert client.get("/docs").status_code == 200
     assert client.get("/health").json() == {"status": "ok"}
-    assert len(client.get("/formats").json()["formats"]) == 10
+    assert len(client.get("/formats").json()["formats"]) == 11
     params = {p["name"] for p in app.openapi()["paths"]["/convert/csv-to-xml"]["post"]["parameters"]}
     assert params == {"infer_types", "pretty", "xml_root"}
+    params = {p["name"] for p in app.openapi()["paths"]["/convert/json-to-protobuf"]["post"]["parameters"]}
+    assert params == {"proto_schema", "proto_message", "response_format"}
