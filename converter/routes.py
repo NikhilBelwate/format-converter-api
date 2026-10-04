@@ -2,7 +2,7 @@
 import base64
 import inspect
 import os
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import Response
@@ -10,6 +10,7 @@ from fastapi.responses import Response
 from .codecs import FORMAT_NOTES, FORMATS, Format
 from .errors import ErrorResponse, InvalidInputError, PayloadTooLargeError
 from .normalize import to_plain
+from .protobuf import EXAMPLE_SCHEMA
 from .service import decode_base64, decode_payload, encode_payload
 
 MAX_BODY_BYTES = int(os.environ.get("MAX_BODY_BYTES", 4 * 1024 * 1024))  # Vercel's hard limit is 4.5 MB
@@ -48,14 +49,20 @@ def build_response(tgt: Format, payload: bytes, options: Dict[str, Any]) -> Resp
 
 # --------------------------------------------------------------------------- endpoint factory
 def _options_for(src: Format, tgt: Format) -> Dict[str, tuple]:
-    """Query parameters that make sense for this particular pair: name -> (type, default, description)."""
+    """Query parameters that make sense for this particular pair: name -> (type, default, description[, example])."""
     opts: Dict[str, tuple] = {}
     if src.key == "csv":
         opts["infer_types"] = (bool, False, "Turn CSV values like `30`, `9.5`, `true` into numbers/booleans instead of strings.")
-    if tgt.key in ("json", "xml", "yaml"):
+    if tgt.key in ("json", "xml", "yaml", "prototext"):
         opts["pretty"] = (bool, True, "Indent the output for readability.")
     if tgt.key == "xml":
         opts["xml_root"] = (str, "root", "Root element name, used when the data has no single root (e.g. arrays).")
+    if {"protobuf", "prototext"} & {src.key, tgt.key}:
+        opts["proto_schema"] = (Optional[str], None, "The .proto definition (full file text). Required for Protobuf Text; "
+                                "without it, Protobuf bytes are keyed by field number, like `protoc --decode_raw`. "
+                                "The prefilled example matches the example body.", EXAMPLE_SCHEMA)
+        opts["proto_message"] = (Optional[str], None, "Message to use from `proto_schema`, e.g. `Person` or `pkg.Person`. "
+                                 "Optional when the schema defines a single top-level message.")
     if tgt.binary:
         opts["response_format"] = (str, "base64", "`base64` returns the bytes as base64 text; `raw` returns a binary download.")
     return opts
@@ -88,11 +95,13 @@ def _make_endpoint(src: Format, tgt: Format):
 
     # Give FastAPI a real signature so each endpoint shows only its relevant query parameters in Swagger.
     parameters = [inspect.Parameter("request", inspect.Parameter.POSITIONAL_OR_KEYWORD, annotation=Request)]
-    for name, (typ, default, desc) in opts.items():
+    for name, (typ, default, desc, *example) in opts.items():
+        extra = {"pattern": "^(base64|raw)$"} if name == "response_format" else {}
+        if example:
+            extra["openapi_examples"] = {"example": {"value": example[0]}}
         parameters.append(inspect.Parameter(
             name, inspect.Parameter.POSITIONAL_OR_KEYWORD, annotation=typ,
-            default=Query(default, description=desc,
-                          **({"pattern": "^(base64|raw)$"} if name == "response_format" else {})),
+            default=Query(default, description=desc, **extra),
         ))
     endpoint.__signature__ = inspect.Signature(parameters)
     endpoint.__name__ = f"{src.key}_to_{tgt.key}"
@@ -102,7 +111,7 @@ def _make_endpoint(src: Format, tgt: Format):
 def _example_body(src: Format) -> str:
     if not src.binary:
         return src.sample
-    json_sample = FORMATS["json"].sample
+    json_sample = src.sample or FORMATS["json"].sample
     data = to_plain(FORMATS["json"].decode(json_sample.encode()))
     return base64.b64encode(src.encode(data)).decode("ascii")
 

@@ -52,7 +52,7 @@ def test_json_to_xml_text_output():
     assert not r.is_error and out["encoding"] == "text" and "<b>1</b>" in out["output"]
 
 
-@pytest.mark.parametrize("fmt", ["messagepack", "cbor", "bson", "protobuf", "flatbuffers"])
+@pytest.mark.parametrize("fmt", ["messagepack", "cbor", "bson", "flatbuffers"])
 def test_binary_roundtrip_is_base64_both_ways(fmt):
     enc = call("convert_data", {"source_format": "json", "target_format": fmt, "data": json.dumps(DATA)}).structured_content
     assert enc["encoding"] == "base64"

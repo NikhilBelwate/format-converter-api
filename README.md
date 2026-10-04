@@ -1,7 +1,7 @@
 # Format Converter API
 
-FastAPI service that converts data between **JSON, XML, YAML, CSV, FlatBuffers, Protocol Buffers, Avro, MessagePack, CBOR and BSON**.
-All 90 directional pairs are exposed as `POST /convert/{source}-to-{target}`, with Swagger UI at `/docs`.
+FastAPI service that converts data between **JSON, XML, YAML, CSV, Protobuf Text, FlatBuffers, Protocol Buffers, Avro, MessagePack, CBOR and BSON**.
+All 110 directional pairs are exposed as `POST /convert/{source}-to-{target}`, with Swagger UI at `/docs`.
 
 ## Run locally
 
@@ -25,7 +25,7 @@ vercel --prod   # production
 
 ## Using the API
 
-Endpoint names: `json`, `xml`, `yaml`, `csv`, `flatbuffers`, `protobuf`, `avro`, `messagepack`, `cbor`, `bson`.
+Endpoint names: `json`, `xml`, `yaml`, `csv`, `prototext`, `flatbuffers`, `protobuf`, `avro`, `messagepack`, `cbor`, `bson`.
 Examples: `/convert/json-to-xml`, `/convert/csv-to-bson`, `/convert/cbor-to-yaml`. `GET /formats` lists them all.
 
 Send the source document as the **raw request body**:
@@ -40,11 +40,37 @@ curl -X POST localhost:8000/convert/cbor-to-json -H "Content-Type: application/o
 
 | Kind | Formats | Request body | Response |
 |---|---|---|---|
-| Text | JSON, XML, YAML, CSV | plain text | plain text |
+| Text | JSON, XML, YAML, CSV, Protobuf Text | plain text | plain text |
 | Binary | FlatBuffers, Protobuf, Avro, MessagePack, CBOR, BSON | base64 text, or raw bytes with `Content-Type: application/octet-stream` | base64 text, or raw bytes with `?response_format=raw` |
 
 Optional query parameters (shown in Swagger only where relevant): `pretty` (JSON/XML/YAML output), `xml_root` (XML output),
-`infer_types` (CSV input → numbers/booleans), `response_format` (binary output).
+`infer_types` (CSV input → numbers/booleans), `response_format` (binary output), `proto_schema` / `proto_message` (Protobuf).
+
+### Protocol Buffers
+
+Protobuf bytes contain field numbers, not field names, so the `.proto` definition is needed to read or write real messages:
+
+```bash
+SCHEMA='syntax = "proto3"; message Person { string name = 1; int32 id = 2; }'
+curl -X POST localhost:8000/convert/json-to-protobuf --url-query "proto_schema=$SCHEMA" \
+     --data-binary '{"name": "Ann", "id": 42}'                        # -> CgNBbm4QKg== (bytes 0a 03 41 6e 6e 10 2a)
+curl -X POST localhost:8000/convert/protobuf-to-json --url-query "proto_schema=$SCHEMA" \
+     --data-binary 'CgNBbm4QKg=='                                     # -> {"name": "Ann", "id": 42}
+```
+
+* `proto_schema`: the full `.proto` file text, compiled with protoc (`google/protobuf/*.proto` imports work, other imports don't).
+  `proto_message` picks the message (`Person` or `pkg.Person`) and is only needed when there are several top-level messages.
+  Data the schema doesn't describe is rejected instead of silently dropped. int64 values beyond 2^53 come back as strings.
+* `prototext` is a Protobuf message object in the readable text format; it always needs `proto_schema`. The object is
+  serialized to real Protobuf bytes internally (the same bytes `protoc --encode` produces), then converted:
+
+  ```bash
+  curl -X POST localhost:8000/convert/prototext-to-json --url-query "proto_schema=$SCHEMA" \
+       --data-binary 'name: "Ann" id: 42'                                # -> {"name": "Ann", "id": 42}
+  ```
+* Without a schema, Protobuf is read like `protoc --decode_raw`: `CgNBbm4QKg==` → `{"1": "Ann", "2": 42}`. Types are guessed from
+  the wire format (length-delimited fields become text, a nested message or base64 bytes; 64/32-bit fields become doubles/floats
+  when they look like one). Writing without a schema needs numeric keys like these.
 
 ## MCP server (for AI agents)
 
@@ -52,11 +78,11 @@ The same converter is available to any MCP-capable agent (Claude Desktop/Code, C
 
 | Tool | What it does |
 |---|---|
-| `convert_data(source_format, target_format, data, pretty, xml_root, infer_types)` | Convert a document between any two formats |
-| `validate_data(format, data)` | Check that a document is well-formed (returns `valid: false` + the error instead of failing) |
+| `convert_data(source_format, target_format, data, pretty, xml_root, infer_types, proto_schema, proto_message)` | Convert a document between any two formats |
+| `validate_data(format, data, proto_schema, proto_message)` | Check that a document is well-formed (returns `valid: false` + the error instead of failing) |
 | `list_formats()` | Formats, how data is passed for each, and per-format caveats |
 
-Text formats are passed as plain strings; binary formats (FlatBuffers, Protobuf, Avro, MessagePack, CBOR, BSON) as **base64 strings**, in and out.
+Text formats (including `prototext`) are passed as plain strings; binary formats (FlatBuffers, Protobuf, Avro, MessagePack, CBOR, BSON) as **base64 strings**, in and out.
 Format names are forgiving: `msgpack`, `YML`, `Protocol Buffers` work, and typos get a "did you mean" hint.
 
 **Remote (the deployed app, or `http://localhost:8000/mcp` locally):**

@@ -43,6 +43,11 @@ class InvalidFormatError(InvalidInputError):
     code = "INVALID_FORMAT"
 
 
+class InvalidSchemaError(InvalidInputError):
+    """A schema option (e.g. proto_schema) that can't be compiled or doesn't match (HTTP 400)."""
+    code = "INVALID_SCHEMA"
+
+
 class ConversionError(APIError):
     """The input was valid, but cannot be represented in the target format (HTTP 422)."""
     status_code = 422

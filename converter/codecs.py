@@ -18,14 +18,12 @@ import msgpack
 import xmltodict
 import yaml
 from flatbuffers import flexbuffers
-from google.protobuf import json_format
-from google.protobuf.struct_pb2 import Value as ProtoValue
 import bson
 
 from .errors import ConversionError, InvalidInputError
+from .protobuf import dec_protobuf, dec_prototext, enc_protobuf, enc_prototext
 
 INT64_MIN, INT64_MAX = -(2**63), 2**63 - 1
-SAFE_DOUBLE_INT = 2**53
 
 
 # --------------------------------------------------------------------------- helpers
@@ -291,48 +289,6 @@ def enc_bson(data: Any) -> bytes:
         raise ConversionError(f"Data cannot be written as BSON: {exc}.")
 
 
-# --------------------------------------------------------------------------- Protocol Buffers
-def _intify(node: Any) -> Any:
-    if isinstance(node, float) and node.is_integer() and abs(node) < SAFE_DOUBLE_INT:
-        return int(node)
-    if isinstance(node, list):
-        return [_intify(v) for v in node]
-    if isinstance(node, dict):
-        return {k: _intify(v) for k, v in node.items()}
-    return node
-
-
-def dec_protobuf(raw: bytes) -> Any:
-    msg = ProtoValue()
-    try:
-        msg.ParseFromString(raw)
-        if msg.WhichOneof("kind") is None:
-            raise ValueError("payload is not a google.protobuf.Value message")
-        return _intify(json_format.MessageToDict(msg))
-    except Exception as exc:
-        raise InvalidInputError(
-            f"Invalid Protobuf data: {exc or type(exc).__name__}.",
-            hint="This API reads/writes Protobuf as a google.protobuf.Value message (a schema-less container).",
-        )
-
-
-def enc_protobuf(data: Any) -> bytes:
-    def check(n: int) -> None:
-        if abs(n) > SAFE_DOUBLE_INT:
-            raise ConversionError(
-                f"Integer {n} cannot be stored exactly: Protobuf Value numbers are doubles (max ±2^53).",
-                hint="Send very large integers as strings.",
-            )
-
-    _walk_ints(data, check)
-    try:
-        msg = ProtoValue()
-        json_format.ParseDict(data, msg)
-        return msg.SerializeToString()
-    except Exception as exc:
-        raise ConversionError(f"Data cannot be written as Protobuf: {exc}.")
-
-
 # --------------------------------------------------------------------------- Avro
 _AVRO_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
@@ -465,12 +421,17 @@ class Format:
     extension: str
     decode: Callable[..., Any]
     encode: Callable[..., bytes]
-    sample: Optional[str] = None   # example input (text formats only; binary samples are generated)
+    sample: Optional[str] = None   # example input; for binary formats, JSON for the data the example encodes
 
 
 FORMAT_NOTES: Dict[str, str] = {
     "flatbuffers": "FlatBuffers normally needs a compiled schema; this API uses FlexBuffers, its schema-less variant.",
-    "protobuf": "Protobuf is read/written as a schema-less `google.protobuf.Value` message. Numbers are doubles.",
+    "protobuf": "Protobuf bytes don't contain field names. Pass the .proto text as `proto_schema` (and `proto_message` "
+                "if it defines several messages) to read/write real messages with field names. Without a schema, fields "
+                "are keyed by number like `protoc --decode_raw` (`{\"1\": \"Ann\", \"2\": 42}`), with types guessed "
+                "from the wire format; writing without a schema needs numeric keys.",
+    "prototext": "The readable Protobuf object syntax (`name: \"Ann\" id: 42 address { city: \"Paris\" }`). Always needs "
+                 "`proto_schema`; the object is serialized to real Protobuf bytes internally, then converted.",
     "avro": "Avro schema is inferred from the data and embedded in the output; decoding always returns a list of records.",
     "bson": "BSON's top level must be a document; non-object data is wrapped as `{\"data\": ...}`.",
     "csv": "CSV needs a list of objects; nested objects become `parent.child` columns.",
@@ -487,7 +448,10 @@ FORMATS: Dict[str, Format] = {f.key: f for f in [
     Format("csv", "CSV", False, "text/csv", "csv", dec_csv, enc_csv,
            "name,age,city\nAlice,30,Paris\nBob,25,Berlin\n"),
     Format("flatbuffers", "FlatBuffers", True, "application/octet-stream", "fb", dec_flatbuffers, enc_flatbuffers),
-    Format("protobuf", "Protocol Buffers", True, "application/x-protobuf", "pb", dec_protobuf, enc_protobuf),
+    Format("protobuf", "Protocol Buffers", True, "application/x-protobuf", "pb", dec_protobuf, enc_protobuf,
+           '{"1": "Alice", "2": 30, "3": 9.5, "4": true, "5": ["a", "b"], "6": {"1": "Paris"}}'),
+    Format("prototext", "Protobuf Text", False, "text/plain", "txtpb", dec_prototext, enc_prototext,
+           'name: "Alice" age: 30 score: 9.5 active: true tags: "a" tags: "b" address { city: "Paris" }'),
     Format("avro", "Avro", True, "application/avro", "avro", dec_avro, enc_avro),
     Format("messagepack", "MessagePack", True, "application/msgpack", "msgpack", dec_msgpack, enc_msgpack),
     Format("cbor", "CBOR", True, "application/cbor", "cbor", dec_cbor, enc_cbor),

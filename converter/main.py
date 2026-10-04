@@ -13,12 +13,12 @@ from .routes import MAX_BODY_BYTES, router
 log = logging.getLogger("converter")
 
 DESCRIPTION = f"""
-Convert data between **JSON, XML, YAML, CSV, FlatBuffers, Protocol Buffers, Avro, MessagePack, CBOR and BSON**.
+Convert data between **JSON, XML, YAML, CSV, Protobuf Text, FlatBuffers, Protocol Buffers, Avro, MessagePack, CBOR and BSON**.
 
 Endpoints are named `POST /convert/{{source}}-to-{{target}}`, e.g. `/convert/json-to-xml`,
 `/convert/csv-to-messagepack`. Send the source document as the raw request body.
 
-* **Text formats** (JSON, XML, YAML, CSV): send and receive plain text.
+* **Text formats** (JSON, XML, YAML, CSV, Protobuf Text): send and receive plain text.
 * **Binary formats** (FlatBuffers, Protobuf, Avro, MessagePack, CBOR, BSON): send **base64 text**
   (or raw bytes with `Content-Type: application/octet-stream`); receive base64 text, or raw bytes with `?response_format=raw`.
 * Max request size: {MAX_BODY_BYTES // 1024} KB.

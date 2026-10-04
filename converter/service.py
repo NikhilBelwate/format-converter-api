@@ -15,7 +15,9 @@ def get_format(key: Any) -> Format:
     """Look up a format by key, tolerating case/whitespace, with a helpful error for typos."""
     normalized = str(key).strip().lower().replace(" ", "").replace("-", "").replace("_", "")
     aliases = {"msgpack": "messagepack", "protocolbuffers": "protobuf", "proto": "protobuf",
-               "flexbuffers": "flatbuffers", "yml": "yaml"}
+               "flexbuffers": "flatbuffers", "yml": "yaml",
+               "textproto": "prototext", "txtpb": "prototext", "pbtxt": "prototext", "prototxt": "prototext",
+               "protobuftext": "prototext", "prototextformat": "prototext"}
     normalized = aliases.get(normalized, normalized)
     if normalized in FORMATS:
         return FORMATS[normalized]

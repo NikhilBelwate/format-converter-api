@@ -39,10 +39,20 @@ FormatArg = Annotated[
     ),
 ]
 
+ProtoSchemaArg = Annotated[Optional[str], Field(
+    description="Protobuf/prototext only: the .proto definition (full file text). Required for prototext. Protobuf "
+                "bytes carry no field names, so without it fields are keyed by number like protoc --decode_raw.",
+)]
+ProtoMessageArg = Annotated[Optional[str], Field(
+    description="Protobuf/prototext only: the message in proto_schema to use, e.g. 'Person'. Optional if it defines one top-level message.",
+)]
+
 INSTRUCTIONS = (
-    "Converts data between JSON, XML, YAML, CSV, FlatBuffers, Protocol Buffers, Avro, MessagePack, CBOR and BSON. "
-    "Text formats (json, xml, yaml, csv) are passed and returned as plain strings. "
+    "Converts data between JSON, XML, YAML, CSV, FlatBuffers, Protocol Buffers, Protobuf Text, Avro, MessagePack, CBOR "
+    "and BSON. Text formats (json, xml, yaml, csv, prototext) are passed and returned as plain strings. "
     "Binary formats (flatbuffers, protobuf, avro, messagepack, cbor, bson) are passed and returned as BASE64 strings. "
+    "For Protobuf, pass the .proto text as proto_schema to get real field names; a Protobuf message object written "
+    "like name: \"Ann\" id: 42 is the prototext format (it requires proto_schema). "
     "Call list_formats for per-format caveats. Errors come back as JSON with a 'code', 'message' and 'hint' - "
     "read the hint and retry with corrected input."
 )
@@ -126,20 +136,25 @@ def convert_data(
     source_format: FormatArg,
     target_format: FormatArg,
     data: Annotated[str, Field(description="The document to convert. Text for json/xml/yaml/csv; base64 text for binary formats.")],
-    pretty: Annotated[bool, Field(description="Indent JSON/XML/YAML output.")] = True,
+    pretty: Annotated[bool, Field(description="Indent JSON/XML/YAML/Protobuf Text output.")] = True,
     xml_root: Annotated[str, Field(description="Root element name when writing XML from data without a single root (e.g. arrays).")] = "root",
     infer_types: Annotated[bool, Field(description="CSV input only: turn values like 30, 9.5, true into numbers/booleans.")] = False,
+    proto_schema: ProtoSchemaArg = None,
+    proto_message: ProtoMessageArg = None,
 ) -> ConversionOutput:
     """Convert a document from one format to another.
 
     Example: source_format="json", target_format="xml", data='{"user": {"name": "Ann"}}'
     returns XML text. Example: source_format="json", target_format="messagepack" returns
     base64 text (encoding="base64"); feed that string back with source_format="messagepack".
+    For Protobuf, pass the .proto text as proto_schema to get real field names.
     """
     data = _require_text(data)
     src, tgt = get_format(source_format), get_format(target_format)
     _check_input_size(data)
-    result = convert(src.key, tgt.key, data, {"pretty": pretty, "xml_root": xml_root, "infer_types": infer_types})
+    options = {"pretty": pretty, "xml_root": xml_root, "infer_types": infer_types,
+               "proto_schema": proto_schema, "proto_message": proto_message}
+    result = convert(src.key, tgt.key, data, options)
     if len(result.payload) > MAX_OUTPUT_BYTES:
         raise OutputTooLargeError(
             f"The converted {tgt.name} is {len(result.payload)} bytes; the limit for tool results is {MAX_OUTPUT_BYTES}.",
@@ -172,6 +187,8 @@ def _summarize(data: Any) -> str:
 def validate_data(
     format: FormatArg,
     data: Annotated[str, Field(description="The document to check. Text for json/xml/yaml/csv; base64 text for binary formats.")],
+    proto_schema: ProtoSchemaArg = None,
+    proto_message: ProtoMessageArg = None,
 ) -> ValidationOutput:
     """Check whether `data` is well-formed in the given format, without converting it.
 
@@ -185,7 +202,7 @@ def validate_data(
         if not data.strip():
             raise InvalidInputError("Input data is empty.", hint=f"Provide the {fmt.name} document to check.")
         raw = decode_base64(data, fmt) if fmt.binary else data.encode("utf-8")
-        parsed = decode_payload(fmt, raw, {})
+        parsed = decode_payload(fmt, raw, {"proto_schema": proto_schema, "proto_message": proto_message})
     except InvalidInputError as exc:
         return ValidationOutput(valid=False, format=fmt.key, error=json.loads(_envelope(exc, fmt.key))["error"])
     return ValidationOutput(valid=True, format=fmt.key, summary=_summarize(parsed))
@@ -217,7 +234,9 @@ def list_formats() -> FormatsOutput:
                        media_type=f.media_type, notes=FORMAT_NOTES.get(f.key))
             for f in FORMATS.values()
         ],
-        options={"pretty": "JSON/XML/YAML output", "xml_root": "XML output", "infer_types": "CSV input"},
+        options={"pretty": "JSON/XML/YAML/Protobuf Text output", "xml_root": "XML output", "infer_types": "CSV input",
+                 "proto_schema": "Protobuf input/output: the .proto file text (gives real field names)",
+                 "proto_message": "Protobuf: which message in proto_schema to use (if it defines several)"},
         usage="Call convert_data(source_format, target_format, data). Any format can be converted to any other.",
     )
 
