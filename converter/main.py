@@ -2,13 +2,14 @@ import logging
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .codecs import FORMATS
 from .errors import APIError
 from .mcp_server import asgi_app as mcp_asgi_app
 from .routes import MAX_BODY_BYTES, router
+from .ui import router as ui_router, static_files
 
 log = logging.getLogger("converter")
 
@@ -39,6 +40,8 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 app.include_router(router)
+app.include_router(ui_router)  # web UI at "/"
+app.mount("/static", static_files, name="static")
 app.add_route("/mcp", mcp_asgi_app, include_in_schema=False)  # MCP server (streamable HTTP) for AI agents
 
 
@@ -84,11 +87,6 @@ async def unexpected_handler(request: Request, exc: Exception):
 
 
 # --------------------------------------------------------------------------- utility routes
-@app.get("/", include_in_schema=False)
-def root():
-    return RedirectResponse("/docs")
-
-
 @app.get("/health", tags=["Utility"], summary="Health check")
 def health():
     return {"status": "ok"}

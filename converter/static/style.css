@@ -1,0 +1,29 @@
+:root { --border: #d0d5dd; --accent: #2563eb; --bg: #f7f8fa; --err: #b42318; --ok: #067647; }
+* { box-sizing: border-box; }
+body { margin: 0; font: 15px/1.5 system-ui, sans-serif; background: var(--bg); color: #1d2939; }
+header { display: flex; justify-content: space-between; align-items: center; padding: 14px 24px; background: #fff; border-bottom: 1px solid var(--border); }
+h1 { font-size: 20px; margin: 0; }
+h2 { font-size: 14px; margin: 0 0 6px; display: flex; justify-content: space-between; align-items: center; }
+a { color: var(--accent); }
+main { max-width: 1100px; margin: 0 auto; padding: 20px 16px; }
+.controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; }
+.controls label { display: flex; flex-direction: column; font-size: 13px; gap: 4px; }
+select, input[type=text], textarea { border: 1px solid var(--border); border-radius: 6px; background: #fff; font: inherit; padding: 8px; }
+select { min-width: 190px; }
+button { border: 1px solid var(--border); background: #fff; border-radius: 6px; padding: 8px 14px; font: inherit; cursor: pointer; }
+button:hover { border-color: var(--accent); }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; margin-left: auto; }
+button.primary:disabled { opacity: .6; cursor: wait; }
+button.small { padding: 2px 10px; font-size: 12px; }
+.hint { color: #475467; font-size: 13px; min-height: 20px; }
+.panes { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+textarea { width: 100%; height: 380px; resize: vertical; font-family: ui-monospace, Consolas, monospace; font-size: 13px; }
+#schema-box { margin-top: 16px; }
+#schema-box textarea { height: 160px; }
+.inline { display: flex; flex-direction: column; gap: 4px; font-size: 13px; margin-top: 8px; max-width: 280px; }
+#status { min-height: 24px; white-space: pre-wrap; }
+#status.error { color: var(--err); }
+#status.ok { color: var(--ok); }
+#schema-box.attention textarea { border-color: var(--err); box-shadow: 0 0 0 2px rgba(180, 35, 24, .25); }
+[hidden] { display: none !important; }
+@media (max-width: 760px) { .panes { grid-template-columns: 1fr; } textarea { height: 240px; } button.primary { margin-left: 0; } }

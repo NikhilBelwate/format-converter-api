@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Format Converter</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header>
+    <h1>Format Converter</h1>
+    <nav><a href="/docs">API docs</a> · <a href="/mcp">MCP</a></nav>
+  </header>
+
+  <main>
+    <div class="controls">
+      <label>From
+        <select id="source"></select>
+      </label>
+      <button id="swap" type="button" title="Swap formats">&#8644;</button>
+      <label>To
+        <select id="target"></select>
+      </label>
+      <button id="convert" type="button" class="primary">Convert</button>
+    </div>
+
+    <p id="hint" class="hint"></p>
+
+    <div class="panes">
+      <section>
+        <h2>Input</h2>
+        <textarea id="input" spellcheck="false" placeholder="Paste your data here"></textarea>
+      </section>
+      <section>
+        <h2>Output <button id="copy" type="button" class="small">Copy</button></h2>
+        <textarea id="output" spellcheck="false" readonly placeholder="Converted data appears here"></textarea>
+      </section>
+    </div>
+
+    <section id="schema-box" hidden>
+      <h2>Protobuf schema (.proto) <button id="example" type="button" class="small">Load example</button></h2>
+      <p class="hint">Protobuf bytes have no field names. Provide a .proto schema to use named fields, or leave it empty and use numeric keys like {"1": "Ann"}.</p>
+      <textarea id="schema" spellcheck="false" placeholder="Optional for Protobuf, required for Protobuf Text"></textarea>
+      <label class="inline">Message name (optional)
+        <input id="message" type="text" placeholder="e.g. Person">
+      </label>
+    </section>
+
+    <p id="status" role="status"></p>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
